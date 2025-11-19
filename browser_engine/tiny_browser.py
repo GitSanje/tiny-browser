@@ -466,6 +466,24 @@ class TinyBrowser:
 # Main
 # -------------------------
 def main():
+    """
+    Example Usage:
+
+    Example 1 — Simple text:
+       python3 browser-engine/tiny-browser.py data:,Hello%20World
+
+    Example 2 — HTML inside URL:
+        python3 browser_engine/tiny_browser.py "data:text/html,<b>Hello</b>"
+    Example 3 — text with entities (<, >) encoded:
+        python3 browser_engine/tiny_browser.py "data:text/html,Hello%20%3Cworld%3E"
+    Example 4 — text with view-source:
+        python3 browser_engine/tiny_browser.py view-source:http://example.org/
+    Example 5 — redirects:
+       python3 browser_engine/tiny_browser.py http://browser.engineering/redirect
+    
+ 
+
+    """
     b = TinyBrowser()
     if len(sys.argv) < 2:
         url = None
