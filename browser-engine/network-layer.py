@@ -145,28 +145,8 @@ class TinyBrowser:
         self.cache = SimpleCache()
         self.default_file_on_no_url = "test.html"
         self.max_redirects = 10
-           
-        # if ":///" in url:
-        #     self.scheme,url = url.split(":///",1)
+        
 
-        # self.scheme, url = url.split("://", 1)
-        # assert self.scheme in ["http", "https"], "Only http and https supported"
-     
-       
-        # if "/" not in url:
-        #     url = url + "/"
-        # self.host, url = url.split("/", 1)
-        # self.path = "/" + url
-
-        #  # Check for custom port
-        # if ":" in self.host:
-        #     self.host, port = self.host.split(":", 1)
-        #     self.port = int(port)
-        # else:
-        #     if self.scheme == "http":
-        #        self.port = 80 
-        #     elif self.scheme == "https":
-        #         self.port = 443
 
     # ---------------------
     # Public: load (entry)
@@ -182,7 +162,9 @@ class TinyBrowser:
         if raw_url.startswith("view-source:"):
             view_source_mode = True
             raw_url = raw_url[len("view-source:"):]
+
         scheme = raw_url.split(":",1)[0].lower()
+
         if scheme == "file":
             body = self._handle_file_url(raw_url)
             if view_source_mode:
@@ -219,10 +201,51 @@ class TinyBrowser:
             resp = self._http_request(url_to_fetch)
             if resp is None:
                 return
+            status_code, headers, body = resp
+            # handle redirects (3xx)
+            if 300 <= status_code < 400:
+                loc = headers.get("location")
+                if not loc:
+                    print("[error] redirect with no Location")
+                    return
+                # resolve relative location
+                from urllib.parse import urljoin
+                url_to_fetch = urljoin(url_to_fetch, loc)
+                print(f"[redirect] {status_code} -> {url_to_fetch}")
+                redirects += 1
+                continue
+            # cache if allowed: GET & 200
+            # parse Cache-Control header
+            cc = headers.get("cache-control", "")
+            # simple parsing: look for no-store, look for max-age=N
+            if status_code == 200:
+                if "no-store" in cc:
+                    pass  # do not cache
+                else:
+                    max_age = None
+                    if "max-age" in cc:
+                        try:
+                            # find max-age
+                            parts = [p.strip() for p in cc.split(',')]
+                            for p in parts:
+                                if p.startswith("max-age"):
+                                    _, val = p.split("=",1)
+                                    max_age = int(val)
+                        except:
+                            max_age = None
+                    self.cache.set(url_to_fetch, body, max_age)
+                 # finally display
+            if view_source_mode:
+                self._show_raw_bytes(body)
+            else:
+                # body is bytes. decode and render
+                text = body.decode("utf8", errors="replace")
+                self._show_text(text)
+            return
             
 
         
-      # ---------------------
+    # ---------------------
     # File URL
     # ---------------------
     def _handle_file_url(self, raw_url):
@@ -235,6 +258,37 @@ class TinyBrowser:
                 return f.read()
         except Exception as e:
             return f"<html><body><h1>File error</h1><p>{e}</p></body></html>".encode("utf8")
+        
+    # ---------------------
+    # Data URL
+    # ---------------------
+    def _handle_data_url(self, raw_url):
+       
+        """
+        # format: data:[<mediatype>][;base64],<data>
+        # We'll support text/html and percent-encoded data
+
+        1. Plain text : data:,Hello%20World
+        2. text/html : data:text/html,<h1>Hello</h1>
+        3. Base64 encoded PNG image : data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...
+
+        """
+        assert raw_url.startswith("data:")
+        body = raw_url[len("data:"):]
+        if "," not in body:
+            return b""
+        meta, data = body.split(",",1)
+        is_base64 = False
+        if ";base64" in meta:
+            is_base64 = True
+            meta = meta.replace(";base64","")
+        mediatype = meta or "text/plain"
+        if is_base64:
+            import base64
+            return base64.b64decode(data)
+        else:
+            # percent-decoded (URL encoded)
+            return unquote(data).encode("utf8")
 
 
     
@@ -364,12 +418,6 @@ class TinyBrowser:
         return status_code, headers_out, body
 
 
-
-
-        
-
-
-
     def create_socket(self,scheme,host,port):
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
@@ -413,6 +461,22 @@ class TinyBrowser:
         print(rendered)
 
 
-    
+
+# -------------------------
+# Main
+# -------------------------
+def main():
+    b = TinyBrowser()
+    if len(sys.argv) < 2:
+        url = None
+    else:
+        url = sys.argv[1]
+    try:
+        b.load(url)
+    finally:
+        b.conn_pool.close_all()
+
+if __name__ == "__main__":
+    main()
 
 
