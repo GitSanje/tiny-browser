@@ -137,43 +137,44 @@ def decode_chunked(rfile):
 #     Scheme  Hostname    path
 # Ex: http://example.org/index.html
 
-class TinyBrowser:
+class URL:
 
-    def __init__(self):
+    def __init__(self, raw_url=None):
          
         self.conn_pool = ConnectionPool()
         self.cache = SimpleCache()
         self.default_file_on_no_url = "test.html"
         self.max_redirects = 10
+        self.raw_url = raw_url
+        
         
 
 
     # ---------------------
     # Public: load (entry)
     # ---------------------      
-    def load(self, raw_url):
-        if raw_url is None:
-            raw_url = "file:///" + self.default_file_on_no_url
-            print(f"[info] No URL given. Opening {raw_url}")
+    def fetch(self):
+        if self.raw_url is None:
+            self.raw_url = "file:///" + self.default_file_on_no_url
+            print(f"[info] No URL given. Opening {self.raw_url}")
         
         # handle view-source wrapper
         view_source_mode = False
 
-        if raw_url.startswith("view-source:"):
+        if self.raw_url.startswith("view-source:"):
             view_source_mode = True
-            raw_url = raw_url[len("view-source:"):]
+            self.raw_url = self.raw_url[len("view-source:"):]
 
-        scheme = raw_url.split(":",1)[0].lower()
-
+        scheme = self.raw_url.split(":",1)[0].lower()
         if scheme == "file":
-            body = self._handle_file_url(raw_url)
+            body = self._handle_file_url(self.raw_url)
             if view_source_mode:
                   self._show_raw_bytes(body)
             else:
                 self._show_text(body.decode("utf8", errors="replace"))
             return
         if scheme == "data":
-            body = self._handle_data_url(raw_url)
+            body = self._handle_data_url(self.raw_url)
             if view_source_mode:
                 self._show_raw_bytes(body)
             else:
@@ -182,7 +183,7 @@ class TinyBrowser:
         # http/https
         # Follow redirects with limit
         redirects = 0
-        url_to_fetch = raw_url
+        url_to_fetch = self.raw_url
 
         while True:
             if redirects > self.max_redirects:
@@ -196,8 +197,8 @@ class TinyBrowser:
                 if view_source_mode:
                     self._show_raw_bytes(cached_body)
                 else:
-                    self._show_text(cached_body.decode("utf8", errors="replace"))
-                return
+                  response_content=  self._show_text(cached_body.decode("utf8", errors="replace"),tag_strip=False)
+                return response_content
             resp = self._http_request(url_to_fetch)
             if resp is None:
                 return
@@ -240,8 +241,8 @@ class TinyBrowser:
             else:
                 # body is bytes. decode and render
                 text = body.decode("utf8", errors="replace")
-                self._show_text(text)
-            return
+                response_content = self._show_text(text, tag_strip=False)
+            return response_content
             
 
         
@@ -442,8 +443,10 @@ class TinyBrowser:
             txt = str(bts)
         print(txt)
     
-    def _show_text(self, text: str):
-        # very small HTML text-only renderer: strip tags and decode entities (exercise 1-4)
+    def _show_text(self, text: str, tag_strip: bool = True) -> str:
+        if not tag_strip : 
+            return text
+        # very small HTML text-only renderer: strip tags and decode entities 
         out = []
         in_tag = False
         i = 0
@@ -458,7 +461,8 @@ class TinyBrowser:
             i += 1
         rendered = "".join(out)
         rendered = decode_entities(rendered)
-        print(rendered)
+        
+        return rendered
 
 
 
@@ -484,13 +488,13 @@ def main():
  
 
     """
-    b = TinyBrowser()
+    b = URL()
     if len(sys.argv) < 2:
         url = None
     else:
         url = sys.argv[1]
     try:
-        b.load(url)
+        b.fetch(url)
     finally:
         b.conn_pool.close_all()
 
