@@ -1,3 +1,5 @@
+def decode_entities(text:str) -> str :
+    return text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 
 
 def is_emoji(ch: str) -> bool:

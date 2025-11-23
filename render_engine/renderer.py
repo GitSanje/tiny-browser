@@ -2,21 +2,22 @@ import tkinter as tk
 from tkinter import ttk
 import os
 import tkinter.font
-from browser_engine.tiny_browser import URL
+from browser_engine.url import URL
+from render_engine.layout import HEIGHT, VSTEP, WIDTH, DisplayItem, DisplayItem, Layout,lex
 from .utils import is_emoji
-from dataclasses import dataclass
+import cProfile
+import pstats
+import sys
 
-WIDTH, HEIGHT = 800, 600
 SCROLL_STEP = 100
-HSTEP = 10 
-VSTEP = 20 
 SCROLLBAR_WIDTH = 10
 
 """
 A browser lays out the page — determines where everything on the page goes—in terms of page coordinates 
 and then rasters the page—draws everything—in terms of screen coordinates.
-https://browser.engineering/examples/xiyouji.html
-Ex: python3 -m render_engine.renderer https://browser.engineering/examples/xiyouji.html
+https://browser.engineering/text.html
+
+Ex: python3 -m   render_engine.renderer https://browser.engineering/text.html
 """
 
 
@@ -37,45 +38,12 @@ pixel_size = 0.222 inch * 96 ≈ 21.3 px
 """
 
 
-@dataclass
-class Text:
-    text: str
-
-@dataclass
-class Tag:
-    tag: str
-
-def lex(body):
-    """
-    Very simple lexer that splits text into Text and Tag tokens.
-    1. Text outside <...> is Text
-    2. Text inside <...> is Tag
-    Ex: "Hello <b>world</b>" -> [Text("Hello "), Tag("b"), Text("world"), Tag("/b")]
-    """
-    out = []
-    buffer = ""
-    in_tag = False
-    for c in body:
-        if c == "<":
-            in_tag = True
-            if buffer: out.append(Text(buffer))
-            buffer = ""
-        elif c == ">":
-            in_tag = False
-            if buffer:
-                out.append(Tag(buffer))
-            buffer = ""
-        else:
-            buffer += c
-    if not in_tag and buffer:
-        out.append(Text(buffer))
-    return out
-        
-
-
 
 class Renderer:
     def __init__(self, width=WIDTH, height=HEIGHT):
+        
+        self.display_list: list [DisplayItem]= []
+        
         self.width = width
         self.height = height
         self.window = tk.Tk()
@@ -84,9 +52,8 @@ class Renderer:
 
         self.canvas.pack(fill="both", expand=True)
         self.image_items = []          # track image create ids if needed
-        self.display_list = []     # list[(char,x,y)]
         self.scroll = 0
-        self.text = "" 
+        self.tokens = [] 
         self.images = {}               # map codepoint-> PhotoImage to keep refs
 
          # Bind the Down arrow key to scrolling
@@ -103,8 +70,10 @@ class Renderer:
 
 
     def load(self, url):
-        self.text = url.fetch()
-        self.display_list = self.layout()
+        text =url.fetch()
+        self.tokens = lex(text)
+        # print(f"[renderer] Lexed into {self.tokens} tokens.")
+        self.display_list = Layout(self.tokens).layout()
         self.compute_document_height()
         self.draw()
     
@@ -116,8 +85,7 @@ class Renderer:
             self.doc_height = 0
             return
         last_char = self.display_list[-1]
-        _, _, last_y = last_char
-        self.doc_height = last_y + VSTEP
+        self.doc_height = last_char.y + VSTEP
 
 
 
@@ -132,12 +100,11 @@ class Renderer:
       
 
 
-         # Ratio of scroll to total scrollable height(Residuent height)
+        # Ratio of scroll to total scrollable height(Residuent height)
         scroll_ratio = self.scroll / (self.doc_height - self.height)
         bar_top = scroll_ratio * (self.height - bar_height)
-        # print(f"Scrollbar: doc_height={self.doc_height}, height={self.height}, scroll={self.scroll}, bar_top={bar_top}, bar_height={bar_height}, scroll_ratio={scroll_ratio}")
-
-         # Draw scrollbar
+     
+        # Draw scrollbar
         x0 = self.width - SCROLLBAR_WIDTH
         y0 = bar_top
         y1 = bar_top + bar_height
@@ -150,20 +117,7 @@ class Renderer:
 
  
 
-    def layout(self,WIDTH=WIDTH):
-        """ Simple layout algorithm that creates a display list with positions for each character. (page coordinates)"""
-        display_list = []
-        cursor_x, cursor_y = HSTEP, VSTEP
-        font = tkinter.font.Font()
-       
-        for word in self.text.split():
-            w = font.measure(word)
-            if cursor_x + w > WIDTH - HSTEP:
-                cursor_y += font.metrics("linespace") * 1.25
-                cursor_x = HSTEP
-            display_list.append((word, cursor_x, cursor_y))
-            cursor_x += w + font.measure(" ")
-        return display_list
+   
     
     # -------- emoji loading (simple) ----------
     def _load_emoji_image(self, ch: str):
@@ -204,11 +158,11 @@ class Renderer:
         """ page coordinate y then has screen coordinate y - self.scroll"""
         self.canvas.delete("all")
         self.image_items.clear()
-        for w, x, y in self.display_list:
+        for display_item in self.display_list:
             
             #skip drawing characters that are offscreen
-            if y > self.scroll + HEIGHT: continue
-            if y + VSTEP < self.scroll: continue
+            if display_item.y > self.scroll + HEIGHT: continue
+            if display_item.y + VSTEP < self.scroll: continue
             # if is_emoji(c):
             #     img = self._load_emoji_image(c)
             #     if img is not None:
@@ -216,7 +170,7 @@ class Renderer:
             #         self.image_items.append(item)
             #         continue
             # # use anchor "nw" so (x,y) is top-left
-            self.canvas.create_text(x, y - self.scroll, text=w, anchor="nw")
+            self.canvas.create_text(display_item.x, display_item.y - self.scroll, text=display_item.word, anchor="nw",font=display_item.font)
         self.draw_scrollbar()
 
     
@@ -248,7 +202,7 @@ class Renderer:
             self.width = event.width
             self.height = event.height
             self.canvas.config(width=self.width, height=self.height)
-            self.display_list = self.layout(self.width)
+            self.display_list = Layout(self.tokens,self.width).layout()
             self.compute_document_height()
             self.draw()
     
@@ -262,8 +216,16 @@ class Renderer:
     def render(self):
         self.window.mainloop()
 
-if __name__ == "__main__":
-    import sys
+def main():
+   
     renderer = Renderer()
     renderer.load(URL(sys.argv[1]))
     renderer.render()
+if __name__ == "__main__":
+  
+    profiler = cProfile.Profile()
+    profiler.runcall(main)
+    stats = pstats.Stats(profiler)
+    stats.sort_stats("cumulative").print_stats(30)
+
+    
