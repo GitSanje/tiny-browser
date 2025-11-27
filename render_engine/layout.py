@@ -7,9 +7,101 @@ HSTEP = 10
 VSTEP = 20 
 WIDTH, HEIGHT = 800, 600
 
-@dataclass
+
 class Text:
-    text: str
+
+    def __init__(self, text,parent):
+        self.text= text
+        self.parent = parent
+        self.children = []
+    
+class Element:
+    def __init__(self, tag, parent):
+        self.tag = tag
+        self.children = []
+        self.parent = parent
+
+
+class HTMLParser:
+    def __init__(self, body):
+        self.body = body
+        self.unfinished_tags: list[Element] = []
+        self.finished_tags = []
+
+    def parse(self):
+        in_tag = False
+        out_tag= False
+        buffer = ""
+        i = 0 
+        while i < len(self.body):
+    
+            if self.body[i] == "<":
+                if buffer:
+                        tag=  self.unfinished_tags[-1] if self.unfinished_tags else None
+                        text = Text(text=buffer,parent=tag)
+                        if tag is not None:
+                            tag.children.append(text)
+                if self.body[i]+ self.body[i+1] == "</":
+                    out_tag = True
+                    buffer =""
+                    i += 2
+                    
+                else:
+                    in_tag= True
+                    buffer =""
+                    i += 1
+            elif self.body[i] == ">" and in_tag:
+                in_tag =False
+                if buffer:
+                    tag=  self.unfinished_tags[-1] if self.unfinished_tags else None
+
+                    element = Element(tag=buffer,parent=tag)
+                    if tag is not None:
+                        
+                        tag.children.append(element)
+                    self.unfinished_tags.append(element)
+                   
+                    print("appened element on unfinished_tags: ", element.tag,  element.parent.tag if element.parent else None)
+                i += 1
+                buffer =""
+           
+            
+            elif self.body[i] == ">" and out_tag:
+                out_tag =False
+                finishedTag = [ tag for tag in self.unfinished_tags if tag.tag == buffer][0]
+                for children in finishedTag.children:
+                    print(f"parent: {buffer} => children :{children.tag if isinstance(children,Element) else children.text}")
+                self.unfinished_tags = [
+                        tag for tag in self.unfinished_tags if tag.tag != buffer
+                    ]
+
+                if buffer:
+                    self.finished_tags.append(finishedTag)
+                buffer = ""
+                print("appened element on finished_tags: ", finishedTag.tag)
+                i += 1
+            else:
+                 buffer += self.body[i]
+                 i += 1
+        for tag in self.finished_tags:
+            print(f"Tag : {tag.tag}")
+               
+
+if __name__ == "__main__": 
+    ex1 = """
+    <html><video></video><section> what's up <h1>This is my webpage </h1></section></html>
+    """
+
+    parser = HTMLParser(body=ex1)
+    parser.parse()
+
+
+
+
+
+    
+       
+
 
 @dataclass
 class Tag:

@@ -17,7 +17,7 @@ A browser lays out the page — determines where everything on the page goes—i
 and then rasters the page—draws everything—in terms of screen coordinates.
 https://browser.engineering/text.html
 
-Ex: python3 -m   render_engine.renderer https://browser.engineering/text.html
+Ex: python3 -m render_engine.renderer https://browser.engineering/text.html
 """
 
 
